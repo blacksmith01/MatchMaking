@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>efb5a3b2-110e-411f-86b6-5f59405f86ec</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>CommonLib</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)ClassUtils.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)CollectionEx.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)EnumerableEx.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ReflectionEx.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TimeEx.cs" />
+  </ItemGroup>
+</Project>
