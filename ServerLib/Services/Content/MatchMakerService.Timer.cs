@@ -27,11 +27,11 @@ namespace ServerLib.Services.Content
                 {
                     if (node.IsGameMatched)
                     {
-                        _logger.LogWarning($"[{Thread.CurrentThread.ManagedThreadId:D02}] del ignored, {node.Id:D05}");
+                        _logger.LogWarning($"[{Thread.CurrentThread.ManagedThreadId:D02}] del player({node.Id:D05}) ignored");
                     }
                     else
                     {
-                        _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] del complete, {node.Id:D05}");
+                        _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] del player({node.Id:D05}) complete");
                         Send_CancelCompleted(node);
                     }
                 }
@@ -56,7 +56,7 @@ namespace ServerLib.Services.Content
 
             var elapsed = _gametime.GetTimeT64() - now;
 
-            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] OnTimer {elapsed} ms");
+            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] OnTimer {elapsed} ms, {_matchSortedPoint.Count - _matchedInLastProcess} players");
         }
 
         void UpdateGroup(UInt32 groupIdx)
@@ -89,10 +89,7 @@ namespace ServerLib.Services.Content
                     }
                     group.DelQueue.Clear();
 
-                    foreach (var node in group.FreeQueue)
-                    {
-                        FreeNode(node);
-                    }
+                    group.FreeQueue.ForEach(node => FreeNode(node));
                     group.FreeQueue.Clear();
                 }
             }
@@ -103,13 +100,11 @@ namespace ServerLib.Services.Content
                     foreach (var node in group.MatchedQueue)
                     {
                         group.Players.Remove(node.Id);
+                        _procDelQueue.Add(node);
                     }
                     group.MatchedQueue.Clear();
 
-                    foreach (var node in group.FreeQueue)
-                    {
-                        FreeNode(node);
-                    }
+                    group.FreeQueue.ForEach(node => FreeNode(node));
                     group.FreeQueue.Clear();
                 }
             }
@@ -117,15 +112,12 @@ namespace ServerLib.Services.Content
             {
                 lock (group.Lock)
                 {
-                    foreach (var node in group.FreeQueue)
-                    {
-                        FreeNode(node);
-                    }
+                    group.FreeQueue.ForEach(node => FreeNode(node));
                     group.FreeQueue.Clear();
                 }
             }
         }
-        
+
         public void BuildSortedList(TimeT64 now)
         {
             var nowSec = (TimeT)(now / TimeEx.Duration_Sec_To_Ms);
@@ -133,7 +125,7 @@ namespace ServerLib.Services.Content
             // 추가/삭제가 없다면 리스트를 재구축할 필요가 없다.
             if (_matchedInLastProcess == 0 && _procAddQueue.Count == 0 && _procDelQueue.Count == 0)
             {
-                foreach(var node in _matchSortedPoint)
+                foreach (var node in _matchSortedPoint)
                 {
                     node.PointBound = GameConstants.GetPointBound_ByRegistTime(nowSec - node.RegTime);
                 }
@@ -205,7 +197,7 @@ namespace ServerLib.Services.Content
         {
             var newGameId = ++_gameIdAlloc;
 
-            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] game {newGameId}, [{nodes.Sum(x => x?.Point) / nodes.Count():D06}]");
+            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] game {newGameId} {nodes.Sum(x => x?.Point) / nodes.Count():D06} pt");
 
             foreach (var node in nodes)
             {
@@ -214,7 +206,7 @@ namespace ServerLib.Services.Content
                 var group = _nodeGroups[groupIdx];
                 group.MatchedQueue.Add(node);
                 Send_Matched(node);
-                _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] game {newGameId}, [{node.Point:D06}] player({node.Id:D05})");
+                _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] game {newGameId} {node.Point:D06} pt +-{node.PointBound:D04} player({node.Id:D05})");
             }
         }
     }

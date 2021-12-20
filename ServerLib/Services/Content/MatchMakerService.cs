@@ -42,9 +42,10 @@ namespace ServerLib.Services.Content
             public Int32 AddDelCount;
             public List<MatchingNode> AddQueue = new(SHARDED_LIST_CAPACITY_SIZE);
             public List<MatchingNode> DelQueue = new(SHARDED_LIST_CAPACITY_SIZE);
-            public List<MatchingNode> MatchedQueue = new(SHARDED_LIST_CAPACITY_SIZE);
-            public List<MatchingNode> FreeQueue = new(SHARDED_LIST_CAPACITY_SIZE);
             public List<MatchingNode> Pool = new(SHARDED_LIST_CAPACITY_SIZE);
+
+            public List<MatchingNode> MatchedQueue = new(SHARDED_LIST_CAPACITY_SIZE); // ontimer
+            public List<MatchingNode> FreeQueue = new(SHARDED_LIST_CAPACITY_SIZE); // ontimer
         }
         ShardedNodeGroup[] _nodeGroups = CollectionEx.CreateArray((int)SHARDED_GROUP_SIZE, () => new ShardedNodeGroup());
 
@@ -110,7 +111,7 @@ namespace ServerLib.Services.Content
                 group.AddDelCount++;
             }
 
-            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] add player, {id:D05} {point:D06}");
+            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] add player({id:D05}) {point:D06} pt");
 
             return ErrNo.OK;
         }
@@ -143,7 +144,7 @@ namespace ServerLib.Services.Content
                 }
                 if (node.IsGameMatched)
                 {
-                    _logger.LogWarning($"[{Thread.CurrentThread.ManagedThreadId:D02}] del ignored, {node.Id:D05}");
+                    _logger.LogWarning($"[{Thread.CurrentThread.ManagedThreadId:D02}] del player({node.Id:D05}) ignored");
                     return ErrNo.Matching_Del_AlreadyMatched;
                 }
 
@@ -168,7 +169,7 @@ namespace ServerLib.Services.Content
                 group.AddDelCount++;
             }
 
-            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] del player, {id:D05}");
+            _logger.LogInformation($"[{Thread.CurrentThread.ManagedThreadId:D02}] del player({id:D05})");
 
             return ErrNo.OK;
         }
