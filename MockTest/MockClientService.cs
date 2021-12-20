@@ -12,10 +12,10 @@ namespace MockTest
     {
         const int THREAD_COUNT = 8;
 
-        int _threadInit;
-        int _threadShutdown;
-        bool _startGenerate;
-        bool _isStopped;
+        volatile int _threadInit;
+        volatile int _threadShutdown;
+        volatile bool _startGenerate;
+        volatile bool _isStopped;
 
         MatchMakerService _matchMaker;
 

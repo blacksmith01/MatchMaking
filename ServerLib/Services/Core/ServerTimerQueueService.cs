@@ -82,9 +82,9 @@ namespace ServerLib.Services.Core
         Dictionary<TimerObjIds, TimerNode> _nodes = new();
         SortedSet<TimerNode> _sortedNodes = new(new TimerNode.Comparer());
 
-        bool _threadStarted = false;
-        bool _threadShutdowned = false;
-        bool _shutdownRequested = false;
+        volatile bool _threadStarted = false;
+        volatile bool _threadShutdowned = false;
+        volatile bool _shutdownRequested = false;
 
         public ServerTimerQueueService(ILogger<ServerTimerQueueService> logger)
         {
