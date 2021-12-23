@@ -9,28 +9,51 @@ namespace UnitTest
 {
     public class UnitTest_MatchMaker
     {
+        sealed class TestContext : IDisposable
+        {
+            public GameTimeService GameTime = default!;
+            public MatchMakerService MatchMaker = default!;
+            public Int64 MatchedGame = 0;
+            public bool DirectDeleted = false;
+            public TestContext()
+            {
+                GameTime = new();
+                MatchMaker = new(GameTime, new EmptyLogger<MatchMakerService>());
+            }
+
+            public bool Start()
+            {
+                var cts = new CancellationTokenSource();
+                MatchMaker.OnServerStartAsync(cts.Token).Wait();
+                if(cts.IsCancellationRequested)
+                    return false;
+                MatchMaker.OnServerStarted();
+                // warm up
+                for (int i = 0; i < 2; i++)
+                {
+                    MatchMaker.OnTimer();
+                }
+                return true;
+            }
+
+            public void Dispose()
+            {
+                MatchMaker.OnServerStopAsync().Wait();
+                MatchMaker.OnServerStopped();
+            }
+        }
+
         [Fact]
         public static void Test_Add()
         {
-            GameTimeService gameTime = new();
-            MatchMakerService matchMaker = new(gameTime, new EmptyLogger<MatchMakerService>());
-            Int64 matchedGame = 0;
-            bool directDeleted = false;
+            using var ctx = new TestContext();
+            var matchMaker = ctx.MatchMaker;
 
             // 서비스 시작 전 추가
             Assert.False(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
 
             // 서비스 시작
-            {
-                var cts = new CancellationTokenSource();
-                matchMaker.OnServerStartAsync(cts.Token).Wait();
-                Assert.False(cts.IsCancellationRequested);
-            }
-            matchMaker.OnServerStarted();
-            for (int i = 0; i < 2; i++)
-            {
-                matchMaker.OnTimer();
-            }
+            Assert.True(ctx.Start());
 
             // 기본 추가
             Assert.True(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
@@ -39,16 +62,15 @@ namespace UnitTest
             Assert.False(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
 
             // 삭제 후 재추가
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK && directDeleted);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK && ctx.DirectDeleted);
             Assert.True(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
 
             // 매칭큐에 업데이트 후 삭제,재추가
             matchMaker.OnTimer();
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK && directDeleted == false);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK && ctx.DirectDeleted == false);
             Assert.False(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
             matchMaker.OnTimer();
             Assert.True(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
-
 
             // 매칭 완료 후 재추가
             for (int i = 1; i < 10; i++)
@@ -56,55 +78,42 @@ namespace UnitTest
                 Assert.True(matchMaker.AddPlayer(1 + i, 0) == ErrNo.OK);
             }
             matchMaker.OnTimer();
-            Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame + 1);
-            matchedGame++;
+            Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame + 1);
+            ctx.MatchedGame++;
             Assert.False(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
-
-            // 서비스 종료
-            matchMaker.OnServerStopAsync().Wait();
-            matchMaker.OnServerStopped();
+            matchMaker.OnTimer();
+            Assert.True(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
         }
 
         [Fact]
         public static void Test_Del()
         {
-            GameTimeService gameTime = new();
-            MatchMakerService matchMaker = new(gameTime, new EmptyLogger<MatchMakerService>());
-            Int64 matchedGame = 0;
-            bool directDeleted = false;
+            using var ctx = new TestContext();
+            var matchMaker = ctx.MatchMaker;
 
             // 서비스 시작 전 삭제
-            Assert.False(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK);
+            Assert.False(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK);
 
             // 서비스 시작
-            {
-                var cts = new CancellationTokenSource();
-                matchMaker.OnServerStartAsync(cts.Token).Wait();
-                Assert.False(cts.IsCancellationRequested);
-            }
-            matchMaker.OnServerStarted();
-            for (int i = 0; i < 2; i++)
-            {
-                matchMaker.OnTimer();
-            }
+            Assert.True(ctx.Start());
 
             // 삭제 실패
-            Assert.False(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK);
+            Assert.False(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK);
 
             // 즉시 삭제
             Assert.True(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK && directDeleted);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK && ctx.DirectDeleted);
 
             // 삭제 재시도
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.Matching_Del_NotRequested);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.Matching_Del_NotRequested);
 
             // 매칭큐에 업데이트 후 삭제
             Assert.True(matchMaker.AddPlayer(1, 0) == ErrNo.OK);
             matchMaker.OnTimer();
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK && directDeleted == false);
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.Matching_Del_Duplicated);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK && ctx.DirectDeleted == false);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.Matching_Del_Duplicated);
             matchMaker.OnTimer();
-            Assert.True(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.Matching_Del_NotRequested);
+            Assert.True(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.Matching_Del_NotRequested);
 
             // 매칭 완료 후 삭제
             for (int i = 0; i < 10; i++)
@@ -112,34 +121,22 @@ namespace UnitTest
                 Assert.True(matchMaker.AddPlayer(1 + i, 0) == ErrNo.OK);
             }
             matchMaker.OnTimer();
-            Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame + 1);
-            matchedGame++;
-            Assert.False(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK);
+            Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame + 1);
+            ctx.MatchedGame++;
+            Assert.False(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK);
             matchMaker.OnTimer();
-            Assert.False(matchMaker.DelPlayer(1, out directDeleted) == ErrNo.OK);
-
-            // 서비스 종료
-            matchMaker.OnServerStopAsync().Wait();
-            matchMaker.OnServerStopped();
+            Assert.False(matchMaker.DelPlayer(1, out ctx.DirectDeleted) == ErrNo.OK);
         }
 
 
         [Fact]
         public static void Test_Matching()
         {
-            GameTimeService gameTime = new();
-            MatchMakerService matchMaker = new(gameTime, new EmptyLogger<MatchMakerService>());
-            Int64 matchedGame = 0;
-            bool directDeleted = false;
+            using var ctx = new TestContext();
+            var matchMaker = ctx.MatchMaker;
 
             // 서비스 시작
-            {
-                var cts = new CancellationTokenSource();
-                matchMaker.OnServerStartAsync(cts.Token).Wait();
-                Assert.False(cts.IsCancellationRequested);
-            }
-            matchMaker.OnServerStarted();
-            matchMaker.OnTimer();
+            Assert.True(ctx.Start());
 
             // 동일 점수 매칭
             for (int i = 0; i < GameConstants.MAX_PLAYER_COUNT_IN_ROOM; i++)
@@ -147,14 +144,14 @@ namespace UnitTest
                 Assert.True(matchMaker.AddPlayer(i + 1, 0) == ErrNo.OK);
             }
             matchMaker.OnTimer();
-            Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame + 1);
-            matchedGame++;
+            Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame + 1);
+            ctx.MatchedGame++;
             matchMaker.OnTimer();
 
             // 범위 내 점수 매칭
             for (int iPhase = 0; iPhase < GameConstants.MATCHING_PHASE_COUNT; iPhase++)
             {
-                gameTime.UpdateTimeMode(0);
+                ctx.GameTime.UpdateTimeMode(0);
                 GamePoint ptMin = 1;
                 GamePoint ptMax = 1 + GameConstants.MATCHING_PHASE_POINT_BOUND_ARR[iPhase];
                 Random rand = new Random();
@@ -166,17 +163,17 @@ namespace UnitTest
                 }
                 if (iPhase > 0)
                 {
-                    gameTime.UpdateTimeMode(GameConstants.MATCHING_PHASE_TIME_SEC_ARR[iPhase - 1] * TimeEx.Duration_Sec_To_Ms);
+                    ctx.GameTime.UpdateTimeMode(GameConstants.MATCHING_PHASE_TIME_SEC_ARR[iPhase - 1] * TimeEx.Duration_Sec_To_Ms);
                 }
                 matchMaker.OnTimer();
-                Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame);
+                Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame);
 
                 // 범위 내 점수로 조정 후 매칭
                 for (int iPlayer = 0; iPlayer < GameConstants.MAX_PLAYER_COUNT_IN_ROOM; iPlayer++)
                 {
-                    Assert.True(matchMaker.DelPlayer(iPlayer + 1, out directDeleted) == ErrNo.OK && directDeleted == false);
+                    Assert.True(matchMaker.DelPlayer(iPlayer + 1, out ctx.DirectDeleted) == ErrNo.OK && ctx.DirectDeleted == false);
                 }
-                gameTime.UpdateTimeMode(0);
+                ctx.GameTime.UpdateTimeMode(0);
                 matchMaker.OnTimer();
                 Assert.True(matchMaker.AddPlayer(1, ptMin) == ErrNo.OK);
                 Assert.True(matchMaker.AddPlayer(2, ptMax) == ErrNo.OK);
@@ -186,18 +183,18 @@ namespace UnitTest
                 }
                 if (iPhase > 0)
                 {
-                    gameTime.UpdateTimeMode(GameConstants.MATCHING_PHASE_TIME_SEC_ARR[iPhase - 1] * TimeEx.Duration_Sec_To_Ms);
+                    ctx.GameTime.UpdateTimeMode(GameConstants.MATCHING_PHASE_TIME_SEC_ARR[iPhase - 1] * TimeEx.Duration_Sec_To_Ms);
                 }
                 matchMaker.OnTimer();
-                Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame + 1);
-                matchedGame++;
+                Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame + 1);
+                ctx.MatchedGame++;
                 matchMaker.OnTimer();
             }
 
             // 시간이 지남에 따라 매칭 변화
             for (int iPhase = 1; iPhase < GameConstants.MATCHING_PHASE_COUNT; iPhase++)
             {
-                gameTime.UpdateTimeMode(0);
+                ctx.GameTime.UpdateTimeMode(0);
                 GamePoint ptMin = 1;
                 GamePoint ptMax = 1 + GameConstants.MATCHING_PHASE_POINT_BOUND_ARR[0];
                 Random rand = new Random();
@@ -208,19 +205,15 @@ namespace UnitTest
                     Assert.True(matchMaker.AddPlayer(iPlayer + 1, point) == ErrNo.OK);
                 }
                 matchMaker.OnTimer();
-                Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame);
+                Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame);
 
                 // 시간 조정 후 매칭
-                gameTime.UpdateTimeMode(GameConstants.MATCHING_PHASE_TIME_SEC_ARR[iPhase - 1] * TimeEx.Duration_Sec_To_Ms);
+                ctx.GameTime.UpdateTimeMode(GameConstants.MATCHING_PHASE_TIME_SEC_ARR[iPhase - 1] * TimeEx.Duration_Sec_To_Ms);
                 matchMaker.OnTimer();
-                Assert.True(matchMaker.GetStat_GameAllocated() == matchedGame + 1);
-                matchedGame++;
+                Assert.True(matchMaker.GetStat_GameAllocated() == ctx.MatchedGame + 1);
+                ctx.MatchedGame++;
                 matchMaker.OnTimer();
             }
-
-            // 서비스 종료
-            matchMaker.OnServerStopAsync().Wait();
-            matchMaker.OnServerStopped();
         }
     }
 }
